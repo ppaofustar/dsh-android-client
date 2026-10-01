@@ -1,0 +1,70 @@
+/* ============================================================
+ * DSH 手机客户端 · 界面修正（热更新样式表）
+ * ------------------------------------------------------------
+ * 由 App 启动时拉取并缓存，页面加载后注入。
+ * 改完在 App 里按「返回键 → 刷新界面修正（热更新）」即可生效。
+ * 出问题想还原：清空本文件后，在 App 里再点一次「刷新界面修正」。
+ * ============================================================ */
+
+/* ------------------------------------------------------------
+ * 1) 窄屏侧边栏改为「抽屉浮层」
+ *
+ * 背景：DSH 用 1024px 作侧边栏自动折叠阈值。手机是窄屏，侧边栏默认
+ * 收成图标条；手动展开后它会把主内容挤成一条窄缝（实测只剩 168px）。
+ *
+ * 状态怎么拿到的：0.2.0 不再输出 data-sidebar-collapsed 属性，而是把
+ * 列宽写在 frame 的行内 style 上（展开 `280px ...`／收起 `56px ...`）。
+ * 纯 CSS 读不到行内值，所以由 dsh-ext.js 观察该属性，把结果写成
+ * <html> 上的 dsh-sb-open / dsh-dt-open 两个 class，这里据此布局。
+ *
+ * 注意：侧栏一旦 position:fixed 就脱离网格流，剩下的子元素会依次落到
+ * 第 1、2 列 —— 所以网格列必须同时改成「不留给侧栏」的列数，否则主内容
+ * 会落进空列里被压扁（踩过两次）。
+ * ------------------------------------------------------------ */
+@media (max-width: 1023px) {
+  /* 侧栏展开 + 详情收起：主内容独占整宽 */
+  html.dsh-sb-open [class*="_frame"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  /* 侧栏展开 + 详情也打开：主内容与详情各占一列 */
+  html.dsh-sb-open.dsh-dt-open [class*="_frame"] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  /* 侧栏本体：固定定位浮层，不占网格 */
+  html.dsh-sb-open [class*="_frame"] > [class*="_sidebarCol"] {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(82vw, 320px) !important;
+    z-index: 60;
+    box-shadow: 6px 0 28px rgba(0, 0, 0, .22);
+  }
+
+  /* 浮层展开时，主内容不要被顶部状态栏/刘海压住 */
+  html.dsh-sb-open [class*="_frame"] > [class*="_centerCol"] {
+    min-width: 0;
+  }
+}
+
+/* ------------------------------------------------------------
+ * 2) 中文标签不被逐字拆行
+ * 设置项是「标签 + 控件」横向排版，窄屏时标签列被压扁，
+ * 中文会一个字一行地折断。keep-all 禁止在中文词语内部断行。
+ * ------------------------------------------------------------ */
+[class*="_label_"],
+[class*="_Label_"],
+[class*="_itemLabel_"],
+[class*="_fieldLabel_"] {
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+@media (max-width: 520px) {
+  [class*="_hint_"],
+  [class*="_Hint_"] {
+    word-break: keep-all;
+  }
+}

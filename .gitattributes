@@ -1,0 +1,16 @@
+# 统一换行符，避免不同系统上出现整文件 diff
+* text=auto eol=lf
+
+# Windows 脚本保留 CRLF（Windows PowerShell 5.1 对 LF 也能跑，但 CRLF 更稳）
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制，不要做换行转换
+*.apk   binary
+*.aab   binary
+*.jar   binary
+*.png   binary
+*.jpg   binary
+*.webp  binary
+*.ico   binary
