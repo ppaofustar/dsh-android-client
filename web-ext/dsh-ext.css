@@ -68,3 +68,104 @@
     word-break: keep-all;
   }
 }
+
+/* ------------------------------------------------------------
+ * 3) computer use 快捷按钮
+ * 宿主侧的 computer-use 插件没有任何界面，这里给它一个入口：
+ * 悬浮按钮 → 菜单 → 把预设指令填进输入框并发送。
+ * ------------------------------------------------------------ */
+#dsh-cu-btn {
+  position: fixed;
+  z-index: 2147483000;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(16, 163, 127, .94);
+  color: #fff;
+  font-size: 20px;
+  line-height: 44px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#dsh-cu-menu {
+  position: fixed;
+  z-index: 2147483500;
+  min-width: 184px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .24);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#dsh-cu-menu .dsh-cu-item {
+  display: block;
+  width: 100%;
+  padding: 11px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: #111;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#dsh-cu-menu .dsh-cu-item:active {
+  background: #f0f2f5;
+}
+
+#dsh-cu-menu .dsh-cu-ask {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+}
+
+#dsh-cu-menu .dsh-cu-ask input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #dcdfe3;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+}
+
+#dsh-cu-menu .dsh-cu-ask button {
+  flex: none;
+  padding: 0 12px;
+  background: #10a37f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  #dsh-cu-menu {
+    background: #23262b;
+  }
+
+  #dsh-cu-menu .dsh-cu-item {
+    color: #e8eaed;
+  }
+
+  #dsh-cu-menu .dsh-cu-item:active {
+    background: #32363d;
+  }
+
+  #dsh-cu-menu .dsh-cu-ask input {
+    background: #1b1d21;
+    border-color: #3a3f46;
+    color: #e8eaed;
+  }
+}
+

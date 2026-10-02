@@ -127,6 +127,8 @@ app/src/main/java/com/dsh/chat/
 web-ext/
 ├── dsh-ext.css            界面修正样式（热更新，独立于 APK）
 ├── dsh-ext.js             界面修正脚本（热更新，独立于 APK）
+│                          含：🖼 图片按钮、🖥 computer use 快捷按钮、
+│                              自动关欢迎弹窗、侧边栏状态标记
 └── download-page.html     APK 下载页模板
 ```
 
@@ -362,6 +364,7 @@ DSH 对 `/api/*` 请求做来源校验：
 | 改宽屏视口宽度 | `JsHook.WIDE_VIEWPORT_WIDTH`（默认 760） |
 | 改返回键菜单项 | `MainActivity.onBackPressed` |
 | 改图片按钮的样式/位置/可选格式 | `web-ext/dsh-ext.js`（不用重装 APK） |
+| 改 computer use 快捷按钮的菜单项 | `web-ext/dsh-ext.js` 里的 `ACTIONS` 数组（不用重装 APK） |
 | 改窄屏抽屉布局 | `web-ext/dsh-ext.css` + `dsh-ext.js` 里的 `sync()`（不用重装 APK） |
 | 加一个新的握手/权限 | `AndroidManifest.xml` + `MainActivity` |
 
