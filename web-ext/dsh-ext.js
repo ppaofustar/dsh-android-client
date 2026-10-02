@@ -621,3 +621,219 @@
   } catch (e) { }
 })();
 
+/* ============================================================
+ * 对话里的图片：修 URL + 长按保存到手机
+ * ------------------------------------------------------------
+ * 桌面实例会把本地文件渲染成 `dsh-app://app/api/file?path=...` —— 那是 Electron
+ * 的私有协议，手机的普通浏览器不认，所以图片全是破图。
+ * 同一路径的 HTTP 版本是可用的（`/api/file?path=...`，需要登录 Cookie），
+ * 所以把 `dsh-app://<host>` 前缀去掉、改写成同源路径即可。
+ *
+ * 改完之后图片能正常显示，再补一个「长按图片 → 保存到手机」：
+ * 走 App 的下载器（它会带上 Cookie），文件落到系统「下载」目录。
+ *
+ * 想关掉：删掉本段，再把 dsh-ext.css 的第 4 节删掉。
+ * ============================================================ */
+(function () {
+  'use strict';
+  try {
+    if (window.__dshImgFixInstalled) return;
+    window.__dshImgFixInstalled = true;
+
+    var MENU_ID = 'dsh-save-menu';
+    var HOLD_MS = 550;
+
+    function log() { try { console.log.apply(console, ['[dsh-img]'].concat([].slice.call(arguments))); } catch (e) { } }
+
+    /* ---------- 1. 改写 dsh-app:// 为同源路径 ---------- */
+
+    var APP_SCHEME = /^dsh-app:\/\/[^/]*(\/.*)$/;
+
+    function rewrite(value) {
+      if (!value || value.indexOf('dsh-app://') !== 0) return null;
+      var m = APP_SCHEME.exec(value);
+      return m ? m[1] : null;
+    }
+
+    function fixAll() {
+      var els = document.querySelectorAll('img[src^="dsh-app://"], a[href^="dsh-app://"]');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var attr = el.tagName === 'IMG' ? 'src' : 'href';
+        var fixed = rewrite(el.getAttribute(attr));
+        if (fixed) {
+          try { el.setAttribute(attr, fixed); } catch (e) { }
+        }
+      }
+      return els.length;
+    }
+
+    /* ---------- 2. 长按图片 → 保存 ---------- */
+
+    var holdTimer = null, holdImg = null, startPt = null;
+
+    function clearHold() {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      holdImg = null;
+      startPt = null;
+    }
+
+    function imgFrom(target) {
+      if (!target || target.nodeType !== 1) return null;
+      if (target.tagName === 'IMG') return target;
+      return target.querySelector ? target.querySelector('img') : null;
+    }
+
+    function onDown(ev) {
+      if (document.getElementById(MENU_ID)) return;
+      var img = imgFrom(ev.target);
+      if (!img) return;
+      var p = ev.touches ? ev.touches[0] : ev;
+      startPt = { x: p.clientX, y: p.clientY };
+      holdImg = img;
+      holdTimer = setTimeout(function () {
+        holdTimer = null;
+        var t = holdImg, pt = startPt;
+        clearHold();
+        if (t && pt) showSaveMenu(t, pt.x, pt.y);
+      }, HOLD_MS);
+    }
+
+    function onMove(ev) {
+      if (!holdTimer || !startPt) return;
+      var p = ev.touches ? ev.touches[0] : ev;
+      if (Math.abs(p.clientX - startPt.x) > 10 || Math.abs(p.clientY - startPt.y) > 10) clearHold();
+    }
+
+    function toast(msg) {
+      try {
+        var t = document.createElement('div');
+        t.id = 'dsh-save-toast';
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(function () { try { t.remove(); } catch (e) { } }, 2600);
+      } catch (e) { }
+    }
+
+    function guessName() {
+      var d = new Date();
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return 'dsh-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+        + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.jpg';
+    }
+
+    function saveImage(img) {
+      var src = img.currentSrc || img.getAttribute('src') || img.src;
+      if (!src) { toast('这张图没有地址'); return; }
+      var abs;
+      try { abs = new URL(src, location.href).href; } catch (e) { abs = src; }
+
+      if (abs.indexOf('http') !== 0) { toast('这个地址无法下载'); return; }
+
+      var name = guessName();
+      // dshname 是给 App 下载器看的文件名提示（服务端会忽略未知参数）
+      var url = abs + (abs.indexOf('?') === -1 ? '?' : '&') + 'dshname=' + encodeURIComponent(name);
+
+      var a = document.createElement('a');
+      a.href = url;
+      a.setAttribute('download', name);
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { try { a.remove(); } catch (e) { } }, 1500);
+      toast('正在保存到「下载」…');
+    }
+
+    function closeSaveMenu() {
+      var m = document.getElementById(MENU_ID);
+      if (m) m.remove();
+    }
+
+    function showSaveMenu(img, x, y) {
+      closeSaveMenu();
+
+      // 抑制长按之后紧跟的那次 click（图片外面常套着一个按钮）。
+      // 注意必须放过菜单自己的点击，否则用户手快时会点不动「保存到手机」。
+      var swallow = function (ev) {
+        var menu = document.getElementById(MENU_ID);
+        if (menu && menu.contains(ev.target)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        document.removeEventListener('click', swallow, true);
+      };
+      document.addEventListener('click', swallow, true);
+      setTimeout(function () { document.removeEventListener('click', swallow, true); }, 900);
+
+      var m = document.createElement('div');
+      m.id = MENU_ID;
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '\uD83D\uDCBE  保存到手机';
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeSaveMenu();
+        saveImage(img);
+      });
+      m.appendChild(btn);
+
+      document.body.appendChild(m);
+
+      var mw = m.offsetWidth, mh = m.offsetHeight;
+      var left = Math.max(8, Math.min(x - mw / 2, window.innerWidth - mw - 8));
+      var top = y - mh - 14;
+      if (top < 8) top = Math.min(window.innerHeight - mh - 8, y + 20);
+      m.style.left = left + 'px';
+      m.style.top = top + 'px';
+
+      setTimeout(function () {
+        var away = function (ev) {
+          if (m.contains(ev.target)) return;
+          closeSaveMenu();
+          document.removeEventListener('touchstart', away, true);
+          document.removeEventListener('mousedown', away, true);
+        };
+        document.addEventListener('touchstart', away, true);
+        document.addEventListener('mousedown', away, true);
+      }, 0);
+    }
+
+    /* ---------- 3. 启动 ---------- */
+
+    function boot() {
+      try {
+        fixAll();
+
+        // 长按检测（触摸 + 鼠标）
+        document.addEventListener('touchstart', onDown, { passive: true, capture: true });
+        document.addEventListener('touchmove', onMove, { passive: true, capture: true });
+        document.addEventListener('touchend', clearHold, true);
+        document.addEventListener('touchcancel', clearHold, true);
+        document.addEventListener('mousedown', onDown, true);
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', clearHold, true);
+
+        // SPA 会不断插入新图片：观察 + 定时兜底
+        var pending = null;
+        var schedule = function () {
+          if (pending) return;
+          pending = setTimeout(function () { pending = null; fixAll(); }, 250);
+        };
+        try {
+          new MutationObserver(schedule).observe(document.documentElement,
+            { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'href'] });
+        } catch (e) { }
+        setInterval(fixAll, 1500);
+
+        log('图片 URL 改写 + 长按保存已就绪');
+      } catch (e) { }
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+
+    window.__dshImg = { fixAll: fixAll, saveImage: saveImage, rewrite: rewrite, showSaveMenu: showSaveMenu };
+  } catch (e) { }
+})();
+

@@ -169,3 +169,51 @@
   }
 }
 
+/* ------------------------------------------------------------
+ * 4) 长按图片 → 保存到手机
+ * 顺带修好 dsh-app:// 图片在手机上不显示的问题（见 dsh-ext.js 第 4 节）。
+ * ------------------------------------------------------------ */
+#dsh-save-menu {
+  position: fixed;
+  z-index: 2147483600;
+  padding: 4px;
+  background: rgba(28, 30, 34, .96);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .34);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#dsh-save-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#dsh-save-menu button:active {
+  background: rgba(255, 255, 255, .14);
+}
+
+#dsh-save-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 200px;
+  transform: translateX(-50%);
+  z-index: 2147483600;
+  padding: 9px 16px;
+  background: rgba(0, 0, 0, .84);
+  border-radius: 20px;
+  color: #fff;
+  font: 13px/1.4 system-ui, -apple-system, sans-serif;
+  max-width: 80vw;
+  text-align: center;
+  pointer-events: none;
+}
+
+
