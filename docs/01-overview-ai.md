@@ -339,6 +339,12 @@ DSH 对 `/api/*` 请求做来源校验：
 4. **签名密钥是全局共享的**（存在 DSH 家目录的凭据文件里），
    **Cookie 绑定的是 authority（域名:端口），不是进程**。
    → 因此同一域名下**换实例、换端口，原 Cookie 依然有效**。
+5. **launch token 是每个进程随机生成的，且只在内存里、不落盘**。
+   → 所以「重装 App 清掉了 Cookie」时，如果连的是**桌面实例**，
+   就**没有任何办法**从界面上重新登录（桌面窗口走 `dsh-app://` 私有协议，压根不使用这个 token）。
+   只有 `dsh web` 实例能把 token 从启动日志里捞回来。
+   完整的机制说明、失效场景、三种恢复手法，以及 ADB 无线调试（含二维码配对）的排查流程，
+   见 [05-auth-and-recovery.md](05-auth-and-recovery.md)。
 
 ### 8.3 前端插件加载
 
@@ -366,6 +372,7 @@ DSH 对 `/api/*` 请求做来源校验：
 | 改图片按钮的样式/位置/可选格式 | `web-ext/dsh-ext.js`（不用重装 APK） |
 | 改 computer use 快捷按钮的菜单项 | `web-ext/dsh-ext.js` 里的 `ACTIONS` 数组（不用重装 APK） |
 | 改窄屏抽屉布局 | `web-ext/dsh-ext.css` + `dsh-ext.js` 里的 `sync()`（不用重装 APK） |
+| 改图片地址改写规则 / 长按保存菜单 | `web-ext/dsh-ext.js` 里的 `__dshImg` 那一段（不用重装 APK） |
 | 加一个新的握手/权限 | `AndroidManifest.xml` + `MainActivity` |
 
 **改完网页层文件后**，上传到 `extBase`，然后在 App 里按

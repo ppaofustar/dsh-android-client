@@ -705,7 +705,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (scriptHandler != null) {
+        if (scriptHandler != null
+                && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             try {
                 scriptHandler.remove();
             } catch (Exception ignored) {

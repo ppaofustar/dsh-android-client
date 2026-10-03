@@ -387,8 +387,8 @@
      *  合成 paste 事件它一定会处理（`execCommand('insertText')` 时灵时不灵），
      *  因此 paste 优先，延迟后再确认，没进去才退回 execCommand。
      *  @returns 目标输入框元素，找不到返回 null */
-    function putText(text) {
-      var el = composer();
+    function putText(text, target) {
+      var el = target || composer();
       if (!el) return null;
       try { el.focus(); } catch (e) { }
       caretToEnd(el);
@@ -402,8 +402,8 @@
       return el;
     }
 
-    function composerText() {
-      var el = composer();
+    function composerText(target) {
+      var el = target || composer();
       return el ? (el.innerText || '').trim() : '';
     }
 
@@ -422,16 +422,25 @@
     /** 填入并发送。发送按钮在空输入时是 disabled，所以要等文字真正进入后再点。 */
     function submit(text) {
       if (!text) return;
-      if (!putText(text)) { toast('没找到输入框，请手动输入'); return; }
+      var target = composer();
+      if (!target) { toast('没找到输入框，请手动输入'); return; }
+      var before = composerText(target);
+      if (!putText(text, target)) { toast('没找到输入框，请手动输入'); return; }
 
       // 等 Lexical 重渲染完再确认（它是异步的）
       setTimeout(function () {
-        if (!composerText()) {
+        if (composerText(target) === before) {
           // paste 没生效，退回 execCommand
-          try { document.execCommand('insertText', false, text); } catch (e) { }
+          try {
+            target.focus();
+            caretToEnd(target);
+            document.execCommand('insertText', false, text);
+          } catch (e) { }
         }
         setTimeout(function () {
-          if (!composerText()) { toast('没填进去，请手动输入'); return; }
+          if (composerText(target) === before) { toast('没填进去，请手动输入'); return; }
+          // 输入框里已有草稿时绝不代替用户发送，避免把未完成内容一并提交。
+          if (before) { toast('已追加；输入框原有内容，请确认后手动发送'); return; }
           var b = sendButton();
           if (b && !b.disabled) b.click();
           else toast('已填入输入框，请手动点发送');
@@ -670,7 +679,7 @@
 
     /* ---------- 2. 长按图片 → 保存 ---------- */
 
-    var holdTimer = null, holdImg = null, startPt = null;
+    var holdTimer = null, holdImg = null, startPt = null, saveMenuAway = null;
 
     function clearHold() {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
@@ -715,27 +724,40 @@
       } catch (e) { }
     }
 
-    function guessName() {
+    function guessName(url) {
       var d = new Date();
       var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      var ext = 'jpg';
+      try {
+        var candidates = [url.searchParams.get('path') || '', url.pathname || ''];
+        for (var i = 0; i < candidates.length; i++) {
+          var m = /\.([a-z0-9]{2,5})(?:$|[?#])/i.exec(candidates[i]);
+          if (m && /^(?:jpe?g|png|webp|gif)$/i.test(m[1])) {
+            ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+            break;
+          }
+        }
+      } catch (e) { }
       return 'dsh-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
-        + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.jpg';
+        + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.' + ext;
     }
 
     function saveImage(img) {
       var src = img.currentSrc || img.getAttribute('src') || img.src;
       if (!src) { toast('这张图没有地址'); return; }
-      var abs;
-      try { abs = new URL(src, location.href).href; } catch (e) { abs = src; }
+      var parsed;
+      try { parsed = new URL(src, location.href); } catch (e) { toast('这个地址无法下载'); return; }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        toast('这个地址无法下载');
+        return;
+      }
 
-      if (abs.indexOf('http') !== 0) { toast('这个地址无法下载'); return; }
-
-      var name = guessName();
-      // dshname 是给 App 下载器看的文件名提示（服务端会忽略未知参数）
-      var url = abs + (abs.indexOf('?') === -1 ? '?' : '&') + 'dshname=' + encodeURIComponent(name);
+      var name = guessName(parsed);
+      // 同源接口会忽略未知参数；外部签名 URL 不能随意追加参数，否则签名可能失效。
+      if (parsed.origin === location.origin) parsed.searchParams.set('dshname', name);
 
       var a = document.createElement('a');
-      a.href = url;
+      a.href = parsed.href;
       a.setAttribute('download', name);
       a.style.display = 'none';
       document.body.appendChild(a);
@@ -747,6 +769,11 @@
     function closeSaveMenu() {
       var m = document.getElementById(MENU_ID);
       if (m) m.remove();
+      if (saveMenuAway) {
+        document.removeEventListener('touchstart', saveMenuAway, true);
+        document.removeEventListener('mousedown', saveMenuAway, true);
+        saveMenuAway = null;
+      }
     }
 
     function showSaveMenu(img, x, y) {
@@ -788,14 +815,12 @@
       m.style.top = top + 'px';
 
       setTimeout(function () {
-        var away = function (ev) {
+        saveMenuAway = function (ev) {
           if (m.contains(ev.target)) return;
           closeSaveMenu();
-          document.removeEventListener('touchstart', away, true);
-          document.removeEventListener('mousedown', away, true);
         };
-        document.addEventListener('touchstart', away, true);
-        document.addEventListener('mousedown', away, true);
+        document.addEventListener('touchstart', saveMenuAway, true);
+        document.addEventListener('mousedown', saveMenuAway, true);
       }, 0);
     }
 
@@ -836,4 +861,3 @@
     window.__dshImg = { fixAll: fixAll, saveImage: saveImage, rewrite: rewrite, showSaveMenu: showSaveMenu };
   } catch (e) { }
 })();
-
