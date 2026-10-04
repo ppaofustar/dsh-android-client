@@ -60,7 +60,7 @@ App 是外壳 + 补丁。
 | 构建 | Android Gradle Plugin 8.7.3 + Gradle 8.11.1 | |
 | 唯一依赖 | `androidx.webkit:webkit:1.12.1` | 只为用 `WebViewCompat.addDocumentStartJavaScript` |
 | 包名 | `com.dsh.chat` | |
-| 版本 | versionCode 3 / versionName "1.2" | |
+| 版本 | versionCode 4 / versionName "1.3" | |
 | APK 体积 | ≈ 1.15 MB | |
 | 原生部分 | 4 个 Java 文件，约 1000 行 | |
 

@@ -163,10 +163,10 @@ DSH 网页端在 `document` 上监听 `drop` 事件。所以只要**合成一个
 
 # 2. 构建 APK
 .\scripts\build-apk.ps1
-# 产物：app\build\outputs\apk\debug\app-debug.apk
+# 产物：app\build\outputs\apk\release\app-release.apk
 
 # 3. 装到手机（USB 调试已开启时）
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\release\app-release.apk
 ```
 
 也可以把 APK 放到一个静态目录里让手机直接下载：
@@ -366,8 +366,8 @@ dsh-app://app/api/file?path=…   →   /api/file?path=…
 
 ```
 包名        com.dsh.chat
-versionCode 3
-versionName 1.2
+versionCode 4
+versionName 1.3
 ```
 
 `local.properties` 里的 `sdk.dir` 指向你自己的 Android SDK，**已被 .gitignore 忽略**，

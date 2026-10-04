@@ -1,3 +1,5 @@
+window.__dshExtVersion = '1.3.0';
+
 /* ============================================================
  * DSH 手机客户端 · 界面修正（热更新脚本）
  * ------------------------------------------------------------
@@ -215,15 +217,23 @@
     var MARKERS = ['内测声明', '预览版说明'];
     var LABELS = ['继续', '知道了', '我明白了', '开始使用', '开始'];
 
+    var observer = null;
+    var scheduled = null;
+
+    function stopWatching() {
+      if (observer) { observer.disconnect(); observer = null; }
+      if (scheduled) { clearTimeout(scheduled); scheduled = null; }
+    }
+
     function tryDismiss() {
       try {
-        if (!document.body) return;
+        if (!document.body) return false;
         var bodyText = document.body.innerText || '';
         var hit = false;
         for (var k = 0; k < MARKERS.length; k++) {
           if (bodyText.indexOf(MARKERS[k]) !== -1) { hit = true; break; }
         }
-        if (!hit) return;
+        if (!hit) return false;
 
         // 只在「包含声明的、按钮最少的最内层容器」里找按钮，
         // 避免整页扫描误点到界面上的其它按钮。
@@ -235,20 +245,32 @@
           var n = all[i].querySelectorAll('button').length;
           if (n >= 1 && n <= 3) scope = all[i];   // 文档序里越靠后越内层
         }
-        if (!scope) return;
+        if (!scope) return false;
 
         var btns = scope.querySelectorAll('button');
         for (var j = 0; j < btns.length; j++) {
           var label = (btns[j].textContent || '').trim();
           for (var m = 0; m < LABELS.length; m++) {
-            if (label === LABELS[m]) { btns[j].click(); return; }
+            if (label === LABELS[m]) { btns[j].click(); stopWatching(); return true; }
           }
         }
       } catch (e) { }
+      return false;
     }
 
-    tryDismiss();
-    setInterval(tryDismiss, 1500);
+    function schedule() {
+      if (scheduled) return;
+      scheduled = setTimeout(function () { scheduled = null; tryDismiss(); }, 120);
+    }
+
+    if (!tryDismiss()) {
+      try {
+        observer = new MutationObserver(schedule);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        // 欢迎声明只会在启动阶段出现，避免观察器永久驻留。
+        setTimeout(stopWatching, 30000);
+      } catch (e) { }
+    }
   } catch (e) { }
 })();
 
@@ -270,6 +292,9 @@
     window.__dshSidebarStateInstalled = true;
 
     var last = '';
+    var frame = null;
+    var frameObserver = null;
+    var scheduled = null;
 
     // 按空格切分，但跳过括号内部的空格（minmax(0px, 1fr) 不能被切开）
     function splitCols(value) {
@@ -283,9 +308,29 @@
       return m ? parseFloat(m[1]) : null;
     }
 
+    function findFrame() {
+      var candidates = document.querySelectorAll('[class*="_frame"]');
+      for (var i = 0; i < candidates.length; i++) {
+        if (/grid-template-columns\s*:/.test(candidates[i].getAttribute('style') || '')) return candidates[i];
+      }
+      return null;
+    }
+
+    function watchFrame(next) {
+      if (next === frame) return;
+      if (frameObserver) frameObserver.disconnect();
+      frame = next;
+      if (!frame) return;
+      try {
+        frameObserver = new MutationObserver(schedule);
+        frameObserver.observe(frame, { attributes: true, attributeFilter: ['style'] });
+      } catch (e) { }
+    }
+
     function sync() {
       try {
-        var frame = document.querySelector('[class*="_frame"]');
+        var nextFrame = findFrame();
+        watchFrame(nextFrame);
         var root = document.documentElement;
         if (!frame) { root.classList.remove('dsh-sb-open'); root.classList.remove('dsh-dt-open'); return; }
 
@@ -312,8 +357,18 @@
       } catch (e) { }
     }
 
+    function schedule() {
+      if (scheduled) return;
+      scheduled = setTimeout(function () { scheduled = null; sync(); }, 80);
+    }
+
     sync();
-    setInterval(sync, 300);
+    try {
+      new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) schedule();
+      });
+    } catch (e) { }
   } catch (e) { }
 })();
 
@@ -839,7 +894,7 @@
         document.addEventListener('mousemove', onMove, true);
         document.addEventListener('mouseup', clearHold, true);
 
-        // SPA 会不断插入新图片：观察 + 定时兜底
+        // SPA 会不断插入新图片：按 DOM 变化修复，不再永久轮询整页。
         var pending = null;
         var schedule = function () {
           if (pending) return;
@@ -849,7 +904,10 @@
           new MutationObserver(schedule).observe(document.documentElement,
             { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'href'] });
         } catch (e) { }
-        setInterval(fixAll, 1500);
+        window.addEventListener('pageshow', schedule);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) schedule();
+        });
 
         log('图片 URL 改写 + 长按保存已就绪');
       } catch (e) { }

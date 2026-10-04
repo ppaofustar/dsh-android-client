@@ -30,13 +30,13 @@ Write-Output "== 构建 =="
 # 在 $ErrorActionPreference='Stop' 下这会被当成错误。这里显式改判退出码。
 $PrevEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-& "$GradleRoot\bin\gradle.bat" assembleDebug --no-daemon --console=plain 2>&1 | Out-String
+& "$GradleRoot\bin\gradle.bat" assembleRelease --no-daemon --console=plain 2>&1 | Out-String
 $Code = $LASTEXITCODE
 $ErrorActionPreference = $PrevEap
 
 if ($Code -ne 0) { throw "Gradle 构建失败，退出码 $Code" }
 
-$Apk = Join-Path $Project "app\build\outputs\apk\debug\app-debug.apk"
+$Apk = Join-Path $Project "app\build\outputs\apk\release\app-release.apk"
 if (Test-Path $Apk) {
     Write-Output "APK BUILD OK: $Apk"
     Write-Output ("size = " + (Get-Item $Apk).Length + " bytes")

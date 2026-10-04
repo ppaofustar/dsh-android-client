@@ -7,6 +7,7 @@ import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -80,6 +81,7 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_EXT_BASE = "";
     private static final int REQ_FILE = 1001;
     private static final int REQ_NOTIF_PERM = 1002;
+    private static final int MAX_EXT_BYTES = 512 * 1024;
 
     private WebView webView;
     private ProgressBar progress;
@@ -103,8 +105,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 允许通过 Chrome DevTools 协议远程调试 WebView（adb forward 后可在电脑上查 DOM/跑 JS）
-        WebView.setWebContentsDebuggingEnabled(true);
+        boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        WebView.setWebContentsDebuggingEnabled(debuggable);
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
         FrameLayout root = new FrameLayout(this);
@@ -169,16 +171,16 @@ public class MainActivity extends Activity {
         s.setSupportZoom(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
-        s.setAllowFileAccess(true);
-        s.setAllowContentAccess(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setUserAgentString(s.getUserAgentString() + " DSHApp/1.1");
+        s.setUserAgentString(s.getUserAgentString() + " DSHApp/1.3");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
-        cm.setAcceptThirdPartyCookies(webView, true);
+        cm.setAcceptThirdPartyCookies(webView, false);
 
         webView.setBackgroundColor(Color.WHITE);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -207,10 +209,7 @@ public class MainActivity extends Activity {
                     }
                     return true;
                 }
-                String targetHost = uri.getHost();
-                String serverHost = Uri.parse(currentUrl()).getHost();
-                if (targetHost != null && serverHost != null
-                        && targetHost.equalsIgnoreCase(serverHost)) {
+                if (isSameOrigin(uri, Uri.parse(currentUrl()))) {
                     return false;
                 }
                 try {
@@ -223,6 +222,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
+                rememberSanitizedServerUrl(url);
                 if (!useDocumentStartScript) {
                     view.evaluateJavascript(JsHook.SCRIPT, null);
                 }
@@ -308,8 +308,14 @@ public class MainActivity extends Activity {
     private void installTaskHook() {
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                String origin = originRule(Uri.parse(currentUrl()));
+                if (origin == null) {
+                    useDocumentStartScript = false;
+                    return;
+                }
+                if (scriptHandler != null) scriptHandler.remove();
                 scriptHandler = WebViewCompat.addDocumentStartJavaScript(
-                        webView, JsHook.SCRIPT, Collections.singleton("*"));
+                        webView, JsHook.SCRIPT, Collections.singleton(origin));
                 useDocumentStartScript = true;
                 return;
             }
@@ -317,6 +323,33 @@ public class MainActivity extends Activity {
             // 落到回退路径
         }
         useDocumentStartScript = false;
+    }
+
+    private static int effectivePort(Uri uri) {
+        int port = uri == null ? -1 : uri.getPort();
+        if (port >= 0) return port;
+        String scheme = uri == null ? null : uri.getScheme();
+        if ("https".equalsIgnoreCase(scheme)) return 443;
+        if ("http".equalsIgnoreCase(scheme)) return 80;
+        return -1;
+    }
+
+    private static boolean isSameOrigin(Uri left, Uri right) {
+        if (left == null || right == null) return false;
+        String ls = left.getScheme(), rs = right.getScheme();
+        String lh = left.getHost(), rh = right.getHost();
+        return ls != null && rs != null && lh != null && rh != null
+                && ls.equalsIgnoreCase(rs)
+                && lh.equalsIgnoreCase(rh)
+                && effectivePort(left) == effectivePort(right);
+    }
+
+    private static String originRule(Uri uri) {
+        if (uri == null || uri.getScheme() == null || uri.getHost() == null) return null;
+        String scheme = uri.getScheme().toLowerCase();
+        if (!"https".equals(scheme)) return null;
+        int port = uri.getPort();
+        return scheme + "://" + uri.getHost() + (port >= 0 ? ":" + port : "");
     }
 
     // ------------------------------------------------------------------ 横竖屏适配
@@ -397,10 +430,10 @@ public class MainActivity extends Activity {
     /** 后台拉取 dsh-ext.css / dsh-ext.js 并缓存；内容有变化就立刻注入当前页面，避免要重启两次才生效。 */
     private void refreshRemoteExt() {
         final String base = extBase();
-        if (base.isEmpty()) return;   // 还没配置服务器地址，跳过
+        if (base.isEmpty() || !isTrustedExtBase(base)) return;
         new Thread(() -> {
-            String css = httpGetString(base + "dsh-ext.css");
-            String js = httpGetString(base + "dsh-ext.js");
+            String css = httpGetString(base + "dsh-ext.css", "text/css");
+            String js = httpGetString(base + "dsh-ext.js", "javascript");
             if (css == null && js == null) return;
             String oldCss = prefs.getString(KEY_EXT_CSS, "");
             String oldJs = prefs.getString(KEY_EXT_JS, "");
@@ -412,13 +445,26 @@ public class MainActivity extends Activity {
             e.apply();
             if (changed) {
                 runOnUiThread(() -> {
-                    if (webView != null) injectExt(webView);
+                    // 旧脚本可能已有监听器/定时器；重载可原子切换到新版本。
+                    if (webView != null && webView.getUrl() != null) webView.reload();
                 });
             }
         }, "dsh-ext-refresh").start();
     }
 
-    private String httpGetString(String url) {
+    private boolean isTrustedExtBase(String base) {
+        try {
+            Uri ext = Uri.parse(base);
+            Uri server = Uri.parse(currentUrl());
+            return "https".equalsIgnoreCase(ext.getScheme())
+                    && ext.getHost() != null && server.getHost() != null
+                    && ext.getHost().equalsIgnoreCase(server.getHost());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String httpGetString(String url, String expectedType) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
@@ -426,11 +472,20 @@ public class MainActivity extends Activity {
             conn.setReadTimeout(8000);
             conn.setInstanceFollowRedirects(true);
             if (conn.getResponseCode() != 200) return null;
+            long declared = conn.getContentLengthLong();
+            if (declared > MAX_EXT_BYTES) return null;
+            String type = conn.getContentType();
+            if (type != null && !type.toLowerCase().contains(expectedType)) return null;
             try (InputStream in = conn.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[8192];
                 int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                int total = 0;
+                while ((n = in.read(buf)) > 0) {
+                    total += n;
+                    if (total > MAX_EXT_BYTES) return null;
+                    out.write(buf, 0, n);
+                }
                 return out.toString("UTF-8");
             }
         } catch (Exception e) {
@@ -503,8 +558,7 @@ public class MainActivity extends Activity {
         keepAliveStarted = false;
         try {
             Intent i = new Intent(this, KeepAliveService.class);
-            i.setAction(KeepAliveService.ACTION_STOP);
-            startService(i);
+            stopService(i);
         } catch (Exception ignored) {
         }
     }
@@ -533,6 +587,27 @@ public class MainActivity extends Activity {
     private String currentUrl() {
         String u = prefs.getString(KEY_URL, DEFAULT_URL);
         return u == null ? "" : u.trim();
+    }
+
+    /** 认证成功后只保存无 token 的地址，登录 Cookie 仍由 WebView 持久化。 */
+    private void rememberSanitizedServerUrl(String loadedUrl) {
+        try {
+            Uri loaded = Uri.parse(loadedUrl);
+            Uri saved = Uri.parse(currentUrl());
+            if (!isSameOrigin(loaded, saved)) return;
+            Uri.Builder clean = loaded.buildUpon().clearQuery();
+            for (String name : loaded.getQueryParameterNames()) {
+                if ("token".equalsIgnoreCase(name)) continue;
+                for (String value : loaded.getQueryParameters(name)) {
+                    clean.appendQueryParameter(name, value);
+                }
+            }
+            String sanitized = clean.build().toString();
+            if (!sanitized.equals(currentUrl())) {
+                prefs.edit().putString(KEY_URL, sanitized).apply();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void showBanner(String text) {
@@ -588,6 +663,7 @@ public class MainActivity extends Activity {
                     prefs.edit().putString(KEY_URL, v).apply();
                     promptedForAuth = false;
                     hideBanner();
+                    installTaskHook();
                     webView.loadUrl(v);
                     refreshRemoteExt();
                 })
@@ -698,7 +774,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         appInForeground = false;
-        if (webView != null) webView.onPause();
+        // 任务运行中保持页面心跳；否则前台保活服务无法避免 WebSocket 掉线。
+        if (webView != null && runningSessions.isEmpty()) webView.onPause();
         // 保活服务已在任务开始时启动（那时处于前台），此处不再启动，避免后台启动限制
         super.onPause();
     }

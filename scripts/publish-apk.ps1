@@ -16,7 +16,7 @@ $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
 $Project    = Split-Path -Parent $ScriptDir
-$SrcApk     = Join-Path $Project "app\build\outputs\apk\debug\app-debug.apk"
+$SrcApk     = Join-Path $Project "app\build\outputs\apk\release\app-release.apk"
 
 if (-not (Test-Path $SrcApk)) { throw "APK 不存在，请先运行 scripts\build-apk.ps1：$SrcApk" }
 
